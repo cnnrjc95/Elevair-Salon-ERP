@@ -1,0 +1,775 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleName {
+  OWNER
+  MANAGER
+  RECEPTION
+  STYLIST
+  ACCOUNTANT
+  INVENTORY
+  HR
+}
+
+enum AuthProvider {
+  PASSWORD
+  GOOGLE
+}
+
+enum ResourceType {
+  ROOM
+  CHAIR
+  EQUIPMENT
+  KIOSK
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  CHECKED_IN
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+enum PaymentStatus {
+  AUTHORIZED
+  CAPTURED
+  REFUNDED
+  VOIDED
+  FAILED
+}
+
+enum PaymentMethodType {
+  STRIPE_CARD
+  STRIPE_WALLET
+  CASH
+  OFFLINE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+}
+
+enum CampaignChannel {
+  EMAIL
+  SMS
+  WHATSAPP
+}
+
+enum StockLedgerType {
+  ADJUSTMENT
+  SALE
+  PURCHASE
+  TRANSFER_IN
+  TRANSFER_OUT
+  STOCKTAKE
+  USAGE
+}
+
+enum CommissionBasis {
+  SERVICE
+  RETAIL
+  BOTH
+}
+
+enum VATRate {
+  ZERO
+  REDUCED
+  STANDARD
+}
+
+enum ReportFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+model User {
+  id             String        @id @default(cuid())
+  email          String        @unique
+  passwordHash   String?
+  firstName      String
+  lastName       String
+  phone          String?
+  locale         String        @default("en-GB")
+  timezone       String        @default("Europe/London")
+  avatarUrl      String?
+  isActive       Boolean       @default(true)
+  twoFactorSecret String?
+  roles          UserRole[]
+  sessions       Session[]
+  staffProfile   StaffProfile?
+  auditLogs      AuditLog[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  user         User     @relation(fields: [userId], references: [id])
+  userId       String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  role      Role     @relation(fields: [roleId], references: [id])
+  roleId    String
+  location  Location? @relation(fields: [locationId], references: [id])
+  locationId String?
+  createdAt DateTime @default(now())
+  @@unique([userId, roleId, locationId])
+}
+
+model Role {
+  id            String        @id @default(cuid())
+  name          RoleName
+  description   String
+  permissions   RolePermission[]
+  userRoles     UserRole[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  label       String
+  description String
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  id            String      @id @default(cuid())
+  role          Role        @relation(fields: [roleId], references: [id])
+  roleId        String
+  permission    Permission  @relation(fields: [permissionId], references: [id])
+  permissionId  String
+}
+
+model Location {
+  id              String             @id @default(cuid())
+  name            String
+  code            String             @unique
+  currency        String             @default("GBP")
+  timezone        String             @default("Europe/London")
+  email           String?
+  phone           String?
+  addressLine1    String
+  addressLine2    String?
+  city            String
+  postalCode      String
+  country         String             @default("GB")
+  settings        LocationSetting?
+  resources       Resource[]
+  staff           StaffProfile[]
+  appointments    Appointment[]
+  inventoryBins   InventoryBin[]
+  cashUps         CashUp[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+model LocationSetting {
+  id                          String      @id @default(cuid())
+  location                    Location    @relation(fields: [locationId], references: [id])
+  locationId                  String      @unique
+  openingHours                Json
+  depositPolicy               Json
+  cancellationPolicy          Json
+  reminderPolicy              Json
+  branding                    Json
+  taxConfiguration            Json
+  checkoutConfiguration       Json
+  createdAt                   DateTime    @default(now())
+  updatedAt                   DateTime    @updatedAt
+}
+
+model Client {
+  id               String            @id @default(cuid())
+  firstName        String
+  lastName         String
+  email            String?           @unique
+  phone            String?
+  marketingOptIn   Boolean           @default(false)
+  gdprArchivedAt   DateTime?
+  notes            String?
+  allergies        Json?
+  consentForms     ConsentForm[]
+  appointments     Appointment[]
+  loyaltyLedger    LoyaltyLedger[]
+  memberships      MembershipEnrollment[]
+  packages         PackageRedemption[]
+  giftCards        GiftCard[]
+  referrals        Referral[]       @relation("ReferralReferrer")
+  referredBy       Referral?        @relation("ReferralReferee", fields: [referredById], references: [id])
+  referredById     String?
+  segments         SegmentMembership[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model PackageRedemption {
+  id          String   @id @default(cuid())
+  client      Client   @relation(fields: [clientId], references: [id])
+  clientId    String
+  packageName String
+  remaining   Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model ConsentForm {
+  id          String   @id @default(cuid())
+  client      Client   @relation(fields: [clientId], references: [id])
+  clientId    String
+  documentUrl String
+  signedAt    DateTime
+  metadata    Json?
+}
+
+model Referral {
+  id          String   @id @default(cuid())
+  referrer    Client   @relation("ReferralReferrer", fields: [referrerId], references: [id])
+  referrerId  String
+  referee     Client   @relation("ReferralReferee", fields: [refereeId], references: [id])
+  refereeId   String
+  code        String   @unique
+  redeemedAt  DateTime?
+}
+
+model LoyaltyLedger {
+  id          String    @id @default(cuid())
+  client      Client    @relation(fields: [clientId], references: [id])
+  clientId    String
+  location    Location  @relation(fields: [locationId], references: [id])
+  locationId  String
+  points      Int
+  reason      String
+  createdAt   DateTime  @default(now())
+}
+
+model MembershipPlan {
+  id            String                  @id @default(cuid())
+  name          String
+  tier          String
+  monthlyFee    Decimal                 @db.Decimal(12,2)
+  benefits      Json
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  enrollments   MembershipEnrollment[]
+}
+
+model MembershipEnrollment {
+  id            String           @id @default(cuid())
+  client        Client           @relation(fields: [clientId], references: [id])
+  clientId      String
+  plan          MembershipPlan   @relation(fields: [planId], references: [id])
+  planId        String
+  startedAt     DateTime
+  expiresAt     DateTime?
+  status        String
+  paymentMethod String
+  balance       Decimal          @db.Decimal(12,2)
+}
+
+model GiftCard {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  client      Client?  @relation(fields: [clientId], references: [id])
+  clientId    String?
+  balance     Decimal  @db.Decimal(12,2)
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+}
+
+model ServiceCategory {
+  id        String    @id @default(cuid())
+  name      String
+  order     Int       @default(0)
+  services  Service[]
+}
+
+model Service {
+  id              String              @id @default(cuid())
+  name            String
+  description     String?
+  category        ServiceCategory?    @relation(fields: [categoryId], references: [id])
+  categoryId      String?
+  basePrice       Decimal             @db.Decimal(12,2)
+  baseDurationMin Int
+  vatRate         VATRate             @default(STANDARD)
+  levelPricing    Json
+  addOns          ServiceAddon[]
+  bundles         ServiceBundleItem[]
+  eligibility     ServiceEligibility[]
+  bomItems        ServiceBomItem[]
+  active          Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+}
+
+model ServiceAddon {
+  id          String   @id @default(cuid())
+  service     Service  @relation(fields: [serviceId], references: [id])
+  serviceId   String
+  name        String
+  durationMin Int
+  price       Decimal  @db.Decimal(12,2)
+}
+
+model ServiceBundle {
+  id        String               @id @default(cuid())
+  name      String
+  price     Decimal              @db.Decimal(12,2)
+  services  ServiceBundleItem[]
+  active    Boolean              @default(true)
+}
+
+model ServiceBundleItem {
+  id           String        @id @default(cuid())
+  bundle       ServiceBundle @relation(fields: [bundleId], references: [id])
+  bundleId     String
+  service      Service       @relation(fields: [serviceId], references: [id])
+  serviceId    String
+  quantity     Int           @default(1)
+}
+
+model ServiceEligibility {
+  id           String        @id @default(cuid())
+  service      Service       @relation(fields: [serviceId], references: [id])
+  serviceId    String
+  staff        StaffProfile  @relation(fields: [staffId], references: [id])
+  staffId      String
+  level        String
+}
+
+model ServiceBomItem {
+  id            String            @id @default(cuid())
+  service       Service           @relation(fields: [serviceId], references: [id])
+  serviceId     String
+  product       InventoryProduct  @relation(fields: [productId], references: [id])
+  productId     String
+  quantity      Decimal           @db.Decimal(10,4)
+}
+
+model Resource {
+  id          String         @id @default(cuid())
+  name        String
+  type        ResourceType
+  location    Location       @relation(fields: [locationId], references: [id])
+  locationId  String
+  capacity    Int            @default(1)
+  isBookable  Boolean        @default(true)
+  appointments AppointmentResource[]
+}
+
+model StaffProfile {
+  id              String              @id @default(cuid())
+  user            User                @relation(fields: [userId], references: [id])
+  userId          String              @unique
+  location        Location            @relation(fields: [locationId], references: [id])
+  locationId      String
+  title           String
+  bio             String?
+  staffLevel      String
+  skills          Json
+  payRate         Decimal             @db.Decimal(12,2)
+  commissionPlan  CommissionPlan?     @relation(fields: [commissionPlanId], references: [id])
+  commissionPlanId String?
+  shifts          StaffShift[]
+  timeOff         StaffTimeOff[]
+  appointments    Appointment[]       @relation("AppointmentStaff")
+  eligibility     ServiceEligibility[]
+  timesheets      Timesheet[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+}
+
+model StaffShift {
+  id          String       @id @default(cuid())
+  staff       StaffProfile @relation(fields: [staffId], references: [id])
+  staffId     String
+  location    Location     @relation(fields: [locationId], references: [id])
+  locationId  String
+  startsAt    DateTime
+  endsAt      DateTime
+  createdAt   DateTime     @default(now())
+}
+
+model StaffTimeOff {
+  id          String       @id @default(cuid())
+  staff       StaffProfile @relation(fields: [staffId], references: [id])
+  staffId     String
+  reason      String
+  startsAt    DateTime
+  endsAt      DateTime
+  status      String
+  createdAt   DateTime     @default(now())
+}
+
+model CommissionPlan {
+  id          String             @id @default(cuid())
+  name        String
+  basis       CommissionBasis
+  tiers       Json
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  staff       StaffProfile[]
+}
+
+model Appointment {
+  id              String               @id @default(cuid())
+  location        Location             @relation(fields: [locationId], references: [id])
+  locationId      String
+  client          Client               @relation(fields: [clientId], references: [id])
+  clientId        String
+  startAt         DateTime
+  endAt           DateTime
+  status          AppointmentStatus    @default(SCHEDULED)
+  notes           String?
+  createdBy       User?                @relation(fields: [createdById], references: [id])
+  createdById     String?
+  staff           StaffProfile?        @relation("AppointmentStaff", fields: [staffId], references: [id])
+  staffId         String?
+  deposit         Decimal              @db.Decimal(12,2)
+  totalPrice      Decimal              @db.Decimal(12,2)
+  recurrenceId    String?
+  services        AppointmentService[]
+  resources       AppointmentResource[]
+  payments        Payment[]
+  reminders       ReminderLog[]
+  waitlistEntries WaitlistEntry[]
+  auditLogs       AuditLog[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+}
+
+model AppointmentService {
+  id             String      @id @default(cuid())
+  appointment    Appointment @relation(fields: [appointmentId], references: [id])
+  appointmentId  String
+  service        Service     @relation(fields: [serviceId], references: [id])
+  serviceId      String
+  staff          StaffProfile? @relation(fields: [staffId], references: [id])
+  staffId        String?
+  durationMin    Int
+  price          Decimal     @db.Decimal(12,2)
+  addOns         Json
+}
+
+model AppointmentResource {
+  id            String       @id @default(cuid())
+  appointment   Appointment  @relation(fields: [appointmentId], references: [id])
+  appointmentId String
+  resource      Resource     @relation(fields: [resourceId], references: [id])
+  resourceId    String
+}
+
+model WaitlistEntry {
+  id            String      @id @default(cuid())
+  appointment   Appointment @relation(fields: [appointmentId], references: [id])
+  appointmentId String
+  client        Client      @relation(fields: [clientId], references: [id])
+  clientId      String
+  requestedAt   DateTime    @default(now())
+  status        String      @default("pending")
+}
+
+model ReminderLog {
+  id            String        @id @default(cuid())
+  appointment   Appointment   @relation(fields: [appointmentId], references: [id])
+  appointmentId String
+  channel       CampaignChannel
+  status        String
+  sentAt        DateTime      @default(now())
+  payload       Json
+}
+
+model InventoryProduct {
+  id              String             @id @default(cuid())
+  sku             String             @unique
+  name            String
+  barcode         String?
+  supplier        String?
+  costPrice       Decimal            @db.Decimal(12,2)
+  retailPrice     Decimal            @db.Decimal(12,2)
+  vatRate         VATRate            @default(STANDARD)
+  minStock        Int                @default(0)
+  maxStock        Int                @default(0)
+  locationBins    InventoryStock[]
+  bomItems        ServiceBomItem[]
+  ledger          InventoryLedger[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+model InventoryBin {
+  id          String     @id @default(cuid())
+  location    Location   @relation(fields: [locationId], references: [id])
+  locationId  String
+  name        String
+  stocks      InventoryStock[]
+  @@unique([name, locationId], name: "name_locationId")
+}
+
+model InventoryStock {
+  id          String           @id @default(cuid())
+  product     InventoryProduct @relation(fields: [productId], references: [id])
+  productId   String
+  bin         InventoryBin     @relation(fields: [binId], references: [id])
+  binId       String
+  quantity    Decimal          @db.Decimal(10,2)
+  @@unique([productId, binId])
+}
+
+model InventoryLedger {
+  id          String           @id @default(cuid())
+  product     InventoryProduct @relation(fields: [productId], references: [id])
+  productId   String
+  location    Location         @relation(fields: [locationId], references: [id])
+  locationId  String
+  type        StockLedgerType
+  quantity    Decimal          @db.Decimal(10,2)
+  reference   String?
+  metadata    Json?
+  createdAt   DateTime         @default(now())
+}
+
+model PurchaseOrder {
+  id           String            @id @default(cuid())
+  location     Location          @relation(fields: [locationId], references: [id])
+  locationId   String
+  supplier     String
+  status       String
+  expectedAt   DateTime?
+  receivedAt   DateTime?
+  lines        PurchaseOrderLine[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+model PurchaseOrderLine {
+  id           String           @id @default(cuid())
+  purchaseOrder PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId String
+  product       InventoryProduct @relation(fields: [productId], references: [id])
+  productId     String
+  quantity      Decimal          @db.Decimal(10,2)
+  costPrice     Decimal          @db.Decimal(12,2)
+  receivedQty   Decimal          @db.Decimal(10,2) @default(0)
+}
+
+model Stocktake {
+  id           String           @id @default(cuid())
+  location     Location         @relation(fields: [locationId], references: [id])
+  locationId   String
+  performedBy  StaffProfile     @relation(fields: [staffId], references: [id])
+  staffId      String
+  countedAt    DateTime         @default(now())
+  items        Json
+}
+
+model InventoryAdjustment {
+  id          String        @id @default(cuid())
+  location    Location      @relation(fields: [locationId], references: [id])
+  locationId  String
+  product     InventoryProduct @relation(fields: [productId], references: [id])
+  productId   String
+  quantity    Decimal         @db.Decimal(10,2)
+  reason      String
+  createdAt   DateTime        @default(now())
+}
+
+model Invoice {
+  id          String          @id @default(cuid())
+  appointment Appointment?    @relation(fields: [appointmentId], references: [id])
+  appointmentId String?
+  location    Location        @relation(fields: [locationId], references: [id])
+  locationId  String
+  client      Client?         @relation(fields: [clientId], references: [id])
+  clientId    String?
+  status      InvoiceStatus   @default(DRAFT)
+  total       Decimal         @db.Decimal(12,2)
+  balance     Decimal         @db.Decimal(12,2)
+  vatAmount   Decimal         @db.Decimal(12,2)
+  issuedAt    DateTime        @default(now())
+  dueAt       DateTime?
+  lines       InvoiceLine[]
+  payments    Payment[]
+}
+
+model InvoiceLine {
+  id          String     @id @default(cuid())
+  invoice     Invoice    @relation(fields: [invoiceId], references: [id])
+  invoiceId   String
+  description String
+  quantity    Decimal    @db.Decimal(10,2)
+  unitPrice   Decimal    @db.Decimal(12,2)
+  vatRate     VATRate
+  metadata    Json?
+}
+
+model Payment {
+  id           String         @id @default(cuid())
+  appointment  Appointment?   @relation(fields: [appointmentId], references: [id])
+  appointmentId String?
+  invoice      Invoice?       @relation(fields: [invoiceId], references: [id])
+  invoiceId    String?
+  location     Location       @relation(fields: [locationId], references: [id])
+  locationId   String
+  method       PaymentMethodType
+  status       PaymentStatus  @default(AUTHORIZED)
+  amount       Decimal        @db.Decimal(12,2)
+  tipAmount    Decimal        @db.Decimal(12,2) @default(0)
+  metadata     Json?
+  processedAt  DateTime       @default(now())
+}
+
+model CashUp {
+  id           String     @id @default(cuid())
+  location     Location   @relation(fields: [locationId], references: [id])
+  locationId   String
+  date         DateTime
+  openingFloat Decimal    @db.Decimal(12,2)
+  closingFloat Decimal    @db.Decimal(12,2)
+  cardTotal    Decimal    @db.Decimal(12,2)
+  cashTotal    Decimal    @db.Decimal(12,2)
+  notes        String?
+  createdAt    DateTime    @default(now())
+}
+
+model CommissionLedger {
+  id           String        @id @default(cuid())
+  staff        StaffProfile  @relation(fields: [staffId], references: [id])
+  staffId      String
+  appointment  Appointment?  @relation(fields: [appointmentId], references: [id])
+  appointmentId String?
+  amount       Decimal       @db.Decimal(12,2)
+  basis        CommissionBasis
+  metadata     Json?
+  createdAt    DateTime      @default(now())
+}
+
+model Timesheet {
+  id          String       @id @default(cuid())
+  staff       StaffProfile @relation(fields: [staffId], references: [id])
+  staffId     String
+  clockInAt   DateTime
+  clockOutAt  DateTime?
+  breakMins   Int          @default(0)
+  createdAt   DateTime     @default(now())
+}
+
+model PayrollExport {
+  id          String   @id @default(cuid())
+  location    Location @relation(fields: [locationId], references: [id])
+  locationId  String
+  periodStart DateTime
+  periodEnd   DateTime
+  fileUrl     String
+  createdAt   DateTime @default(now())
+}
+
+model Campaign {
+  id          String            @id @default(cuid())
+  name        String
+  channel     CampaignChannel
+  content     Json
+  filters     Json
+  status      String
+  scheduledAt DateTime?
+  sends       CampaignSend[]
+  createdAt   DateTime          @default(now())
+}
+
+model CampaignSend {
+  id          String      @id @default(cuid())
+  campaign    Campaign    @relation(fields: [campaignId], references: [id])
+  campaignId  String
+  client      Client?     @relation(fields: [clientId], references: [id])
+  clientId    String?
+  status      String
+  metrics     Json?
+  sentAt      DateTime?
+}
+
+model Segment {
+  id          String               @id @default(cuid())
+  name        String
+  definition  Json
+  memberships SegmentMembership[]
+}
+
+model SegmentMembership {
+  id        String  @id @default(cuid())
+  segment   Segment @relation(fields: [segmentId], references: [id])
+  segmentId String
+  client    Client  @relation(fields: [clientId], references: [id])
+  clientId  String
+  addedAt   DateTime @default(now())
+}
+
+model ReportSchedule {
+  id          String         @id @default(cuid())
+  name        String
+  reportKey   String
+  frequency   ReportFrequency
+  recipients  String
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+}
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  actor       User?       @relation(fields: [actorId], references: [id])
+  actorId     String?
+  location    Location?   @relation(fields: [locationId], references: [id])
+  locationId  String?
+  action      String
+  entityType  String
+  entityId    String
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+}
+
+model WebhookSubscription {
+  id          String   @id @default(cuid())
+  name        String
+  targetUrl   String
+  eventKey    String
+  secret      String
+  createdAt   DateTime @default(now())
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String
+  keyHash     String
+  location    Location? @relation(fields: [locationId], references: [id])
+  locationId  String?
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+}
+
+model OfflineSale {
+  id            String   @id @default(cuid())
+  location      Location @relation(fields: [locationId], references: [id])
+  locationId    String
+  payload       Json
+  queuedAt      DateTime @default(now())
+  syncedAt      DateTime?
+  status        String   @default("pending")
+}
